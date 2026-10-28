@@ -1,0 +1,26 @@
+resources:
+  apps:
+    dashboard:
+      name: ${var.app_name}
+      description: Live airport operations dashboard (OBO + Lakebase)
+      source_code_path: ../src/app
+      user_api_scopes: [postgres, genie]
+      config:
+        command: ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+        env:
+          - name: LAKEBASE_ENDPOINT
+            value: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}/endpoints/${var.lakebase_endpoint_id}
+          - name: PGDATABASE
+            value: ${var.lakebase_database}
+          - name: ACCESS_GROUPS
+            value: ${var.access_groups}
+          - name: TOKEN_TTL_S
+            value: "3000"
+          - name: GENIE_SPACE_ID
+            value: ${resources.genie_spaces.airport_ops.id}
+      resources:
+        - name: lakebase
+          postgres:
+            branch: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}
+            database: ${resources.postgres_databases.airport_ops_db.id}
+            permission: CAN_CONNECT_AND_CREATE

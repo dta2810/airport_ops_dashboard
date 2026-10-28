@@ -1,0 +1,83 @@
+resources:
+  jobs:
+    setup:
+      name: airport-ops-setup
+      tasks:
+        - task_key: uc_objects
+          notebook_task:
+            notebook_path: ../src/setup/01_uc_objects.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              landing_volume: ${var.landing_volume}
+              gold_principal: ${var.gold_principal}
+        - task_key: lakebase_ddl
+          depends_on: [{task_key: uc_objects}]
+          notebook_task:
+            notebook_path: ../src/setup/02_lakebase_ddl.py
+            base_parameters:
+              endpoint: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}/endpoints/${var.lakebase_endpoint_id}
+              database: ${var.lakebase_database}
+              gold_principal: ${var.gold_principal}
+              app_name: ${var.app_name}
+        - task_key: lakebase_access
+          depends_on: [{task_key: lakebase_ddl}]
+          notebook_task:
+            notebook_path: ../src/setup/04_lakebase_access.py
+            base_parameters:
+              endpoint: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}/endpoints/${var.lakebase_endpoint_id}
+              database: ${var.lakebase_database}
+              gold_principal: ${var.gold_principal}
+              config_path: ${workspace.file_path}/config/demo.yaml
+
+    # needs the bronze table, which the bronze pipeline creates on its first run
+    gold_setup:
+      name: airport-ops-gold-setup
+      tasks:
+        - task_key: uc_views
+          notebook_task:
+            notebook_path: ../src/setup/03_uc_views.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              config_path: ${workspace.file_path}/config/demo.yaml
+              gold_principal: ${var.gold_principal}
+        - task_key: genie_access
+          depends_on: [{task_key: uc_views}]
+          notebook_task:
+            notebook_path: ../src/setup/05_genie_access.py
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              config_path: ${workspace.file_path}/config/demo.yaml
+              genie_reader: ${var.genie_reader}
+
+    simulator_backfill:
+      name: airport-ops-simulator-backfill
+      tasks:
+        - task_key: backfill
+          notebook_task:
+            notebook_path: ../src/simulator/run_backfill.py
+            base_parameters:
+              landing_path: /Volumes/${var.catalog}/${var.schema}/${var.landing_volume}
+              dims_schema: ${var.catalog}.${var.schema}
+              config_path: ${workspace.file_path}/config/demo.yaml
+              backfill_start_date: ""
+
+    simulator_live:
+      name: airport-ops-simulator-live
+      # cost evaluation; serverless spend is attributed via the budget policy, not these tags
+      tags:
+        project: airport-ops-dashboard
+        cost_eval: live-run-2026-10
+        component: simulator-live
+      tasks:
+        - task_key: live
+          notebook_task:
+            notebook_path: ../src/simulator/run_live.py
+            base_parameters:
+              landing_path: /Volumes/${var.catalog}/${var.schema}/${var.landing_volume}
+              dims_schema: ${var.catalog}.${var.schema}
+              config_path: ${workspace.file_path}/config/demo.yaml
+              duration_min: "60"
+              live_start_hhmm: "05:30"   # sim UTC time the live window opens (first bank ~06:30)

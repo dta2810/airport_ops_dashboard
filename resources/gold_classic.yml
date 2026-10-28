@@ -1,0 +1,92 @@
+# Classic-compute gold consumer for the serverless-vs-classic comparison (docs/deployment.md#classic-gold-consumer-comparison).
+# Declared for every target: the job is continuous + PAUSED, so a deploy creates it but never runs it.
+# Reads the same bronze; writes {catalog}.${var.gold_classic_schema}.gold_* and Lakebase schema ${var.gold_classic_lakebase_schema}.
+variables:
+  gold_classic_node_type:
+    description: Node type of the single-node classic gold consumer cluster; empty = deploy.py picks a 4-core node of the workspace's cloud
+    default: ""
+  gold_classic_schema:
+    description: UC schema for the classic consumer's Delta replicas and checkpoint volume
+    default: airport_ops_classic
+  gold_classic_lakebase_schema:
+    description: Lakebase (Postgres) schema the classic consumer writes; never ops
+    default: ops_classic
+  gold_classic_spark_version:
+    description: Databricks Runtime of the classic gold cluster; recommended = latest LTS (18 LTS, Spark 4.1)
+    default: 18.x-scala2.13
+  gold_classic_runtime_engine:
+    description: PHOTON (default) or STANDARD
+    default: PHOTON
+  gold_classic_trigger:
+    description: Structured Streaming processingTime trigger of the classic consumer
+    default: 0 seconds
+
+resources:
+  jobs:
+    # needs setup + gold_setup done first (SP Lakebase role/CONNECT, USE CATALOG, bronze + views)
+    gold_classic_setup:
+      name: airport-ops-gold-classic-setup
+      tasks:
+        - task_key: uc_targets
+          notebook_task:
+            notebook_path: ../src/setup/06_gold_classic_uc.py
+            base_parameters:
+              catalog: ${var.catalog}
+              classic_schema: ${var.gold_classic_schema}
+              checkpoint_volume: chk
+              gold_principal: ${var.gold_principal}
+        - task_key: lakebase_ddl
+          depends_on: [{task_key: uc_targets}]
+          notebook_task:
+            notebook_path: ../src/setup/02_lakebase_ddl.py
+            base_parameters:
+              endpoint: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}/endpoints/${var.lakebase_endpoint_id}
+              database: ${var.lakebase_database}
+              gold_principal: ${var.gold_principal}
+              app_name: ${var.app_name}
+              lakebase_schema: ${var.gold_classic_lakebase_schema}
+
+    # continuous + PAUSED: deploy never starts it; deploy.py start-classic / stop-classic toggle it
+    gold_classic:
+      name: airport-ops-gold-classic
+      tags:
+        project: airport-ops-dashboard
+        cost_eval: live-run-2026-10
+        component: gold_classic
+      continuous:
+        pause_status: PAUSED
+      max_concurrent_runs: 1
+      run_as: ${var.gold_run_as}
+      job_clusters:
+        - job_cluster_key: gold_classic
+          new_cluster:
+            spark_version: ${var.gold_classic_spark_version}
+            node_type_id: ${var.gold_classic_node_type}
+            runtime_engine: ${var.gold_classic_runtime_engine}
+            num_workers: 0
+            # standard access mode: dedicated supports only batch reads of streaming tables
+            data_security_mode: USER_ISOLATION
+            spark_conf:
+              spark.master: local[*, 4]
+              spark.databricks.cluster.profile: singleNode
+              spark.sql.session.timeZone: UTC
+            custom_tags:
+              ResourceClass: SingleNode
+              project: airport-ops-dashboard
+              component: gold_classic
+      tasks:
+        - task_key: gold_classic
+          job_cluster_key: gold_classic
+          notebook_task:
+            notebook_path: ../src/pipelines/gold/gold_stream_classic.py
+            base_parameters:
+              uc_schema: ${var.catalog}.${var.schema}
+              replica_schema: ${var.catalog}.${var.gold_classic_schema}
+              endpoint: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}/endpoints/${var.lakebase_endpoint_id}
+              database: ${var.lakebase_database}
+              lakebase_schema: ${var.gold_classic_lakebase_schema}
+              checkpoint: /Volumes/${var.catalog}/${var.gold_classic_schema}/chk/gold_classic
+              trigger_interval: ${var.gold_classic_trigger}
+          libraries:
+            # plain psycopg (system libpq), same as the serverless pipeline env; DBR ships databricks-sdk
+            - pypi: {package: psycopg==3.2.3}

@@ -1,0 +1,45 @@
+resources:
+  pipelines:
+    # Stands in for the customer's existing, untouchable bronze pipeline.
+    bronze:
+      name: airport-ops-bronze
+      # cost evaluation; serverless spend is attributed via the budget policy, not these tags
+      tags:
+        project: airport-ops-dashboard
+        cost_eval: live-run-2026-10
+        component: bronze
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      continuous: true
+      channel: CURRENT
+      libraries:
+        - file:
+            path: ../src/pipelines/bronze/bronze_milestones.py
+      configuration:
+        airport_ops.landing_path: /Volumes/${var.catalog}/${var.schema}/${var.landing_volume}/milestones
+
+    # Consumer: custom silver/gold per micro-batch → Lakebase + Delta replica.
+    gold:
+      name: airport-ops-gold
+      # cost evaluation; serverless spend is attributed via the budget policy, not these tags
+      tags:
+        project: airport-ops-dashboard
+        cost_eval: live-run-2026-10
+        component: gold
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      serverless: true
+      continuous: true
+      channel: CURRENT
+      run_as: ${var.gold_run_as}
+      environment:
+        dependencies:
+          - psycopg
+      libraries:
+        - file:
+            path: ../src/pipelines/gold/gold_sink.py
+      configuration:
+        airport_ops.uc_schema: ${var.catalog}.${var.schema}
+        airport_ops.endpoint: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}/endpoints/${var.lakebase_endpoint_id}
+        airport_ops.database: ${var.lakebase_database}

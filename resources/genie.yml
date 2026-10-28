@@ -1,0 +1,89 @@
+# Genie space over the access-filtered views (src/setup/genie_access.py, created by the gold_setup job).
+# Rows and sections are enforced in the views by group membership, so CAN_RUN on the space is not a data grant.
+# Collections inside serialized_space must stay sorted by identifier / id (API requirement).
+resources:
+  genie_spaces:
+    airport_ops:
+      title: aeroLatinos Airport Operations
+      description: Ask about flights, OTP, taxi times, gates and hub connections. You only see the airports and sections of your role. Synthetic demo data.
+      warehouse_id: ${var.genie_warehouse_id}
+      permissions:
+        - {level: CAN_RUN, group_name: aops-ops-control}
+        - {level: CAN_RUN, group_name: aops-hub-connections}
+        - {level: CAN_RUN, group_name: aops-station-PTY}
+        - {level: CAN_RUN, group_name: aops-station-BOG}
+      serialized_space:
+        version: 2
+        config:
+          sample_questions:
+            - {id: "0a000000000000000000000000000001", question: ["What is the departure OTP D15 by airport in the last 24 hours?"]}
+            - {id: "0a000000000000000000000000000002", question: ["Which flights are more than 15 minutes late and still on the ground?"]}
+            - {id: "0a000000000000000000000000000003", question: ["What is the connection success rate at the hub today?"]}
+            - {id: "0a000000000000000000000000000004", question: ["Which delay causes cost the most minutes today?"]}
+        data_sources:
+          tables:
+            - identifier: ${var.catalog}.${var.schema}.genie_airport_hour_kpis
+            - identifier: ${var.catalog}.${var.schema}.genie_airport_metrics
+            - identifier: ${var.catalog}.${var.schema}.genie_connection_metrics
+            - identifier: ${var.catalog}.${var.schema}.genie_flight_state
+            - identifier: ${var.catalog}.${var.schema}.genie_gate_hour_occupancy
+            - identifier: ${var.catalog}.${var.schema}.genie_hub_connections
+        instructions:
+          text_instructions:
+            - id: "0b000000000000000000000000000001"
+              content:
+                - |
+                  aeroLatinos is a fictitious airline: one hub (PTY) and spoke airports, all aircraft B737-800. All times are UTC.
+                  "Now" is the latest event in the data, not the wall clock: use (SELECT MAX(last_event_ts) FROM genie_flight_state). "Today" is DATE of that value.
+                  Prefer the metric views for KPIs: genie_airport_metrics (OTP, movements, taxi, delay minutes, cancellations) and genie_connection_metrics (connections, at risk, missed, success rate). Query them with MEASURE(<measure>) and GROUP BY dimensions.
+                  OTP D15 = share of completed movements within 15 minutes of schedule; D0 = at or before schedule. Show OTP as a percentage.
+                  Hub minimum connection time is 45 minutes; minimum ground time is 40 minutes.
+                  An empty result can mean the reader's role has no access to that airport or section; say so instead of guessing.
+                  Be concise, do not restate the question, answer in the user's language.
+          example_question_sqls:
+            - id: "0c000000000000000000000000000001"
+              question: ["What is the departure OTP D15 by airport in the last 24 hours?"]
+              sql:
+                - |
+                  SELECT airport_iata, MEASURE(departures) AS departures, ROUND(100 * MEASURE(dep_otp_d15), 1) AS dep_otp_d15_pct
+                  FROM ${var.catalog}.${var.schema}.genie_airport_metrics
+                  WHERE hour_start_utc >= (SELECT MAX(last_event_ts) FROM ${var.catalog}.${var.schema}.genie_flight_state) - INTERVAL 24 HOURS
+                  GROUP BY ALL ORDER BY dep_otp_d15_pct
+            - id: "0c000000000000000000000000000002"
+              question: ["Which flights are more than 15 minutes late and still on the ground?"]
+              sql:
+                - |
+                  WITH now AS (SELECT MAX(last_event_ts) AS ts FROM ${var.catalog}.${var.schema}.genie_flight_state)
+                  SELECT flight_number, origin_iata, destination_iata, std_utc, phase, gate_dep,
+                         CAST((unix_timestamp(now.ts) - unix_timestamp(std_utc)) / 60 AS INT) AS minutes_late
+                  FROM ${var.catalog}.${var.schema}.genie_flight_state, now
+                  WHERE aobt IS NULL AND phase NOT IN ('CANCELLED', 'DIVERTED') AND std_utc < now.ts - INTERVAL 15 MINUTES
+                    AND std_utc > now.ts - INTERVAL 12 HOURS
+                  ORDER BY minutes_late DESC
+            - id: "0c000000000000000000000000000003"
+              question: ["What is the connection success rate at the hub today?"]
+              sql:
+                - |
+                  SELECT hub_iata, MEASURE(connections) AS connections, MEASURE(connections_at_risk) AS at_risk,
+                         MEASURE(connections_missed) AS missed, ROUND(100 * MEASURE(connection_success_rate), 1) AS success_pct
+                  FROM ${var.catalog}.${var.schema}.genie_connection_metrics
+                  WHERE ops_date = (SELECT DATE(MAX(last_event_ts)) FROM ${var.catalog}.${var.schema}.genie_flight_state)
+                  GROUP BY ALL
+            - id: "0c000000000000000000000000000004"
+              question: ["Which delay causes cost the most minutes today?"]
+              sql:
+                - |
+                  SELECT delay_cause, COUNT(*) AS flights, SUM(dep_delay_min) AS delay_minutes
+                  FROM ${var.catalog}.${var.schema}.genie_flight_state
+                  WHERE delay_cause IS NOT NULL AND dep_delay_min > 0
+                    AND DATE(std_utc) = (SELECT DATE(MAX(last_event_ts)) FROM ${var.catalog}.${var.schema}.genie_flight_state)
+                  GROUP BY ALL ORDER BY delay_minutes DESC
+            - id: "0c000000000000000000000000000005"
+              question: ["Which hub gates were busiest in the last 12 hours?"]
+              sql:
+                - |
+                  SELECT gate_id, SUM(occupied_minutes) AS occupied_minutes, SUM(flights) AS flights,
+                         ROUND(100 * SUM(occupied_minutes) / (12 * 60), 1) AS utilisation_pct
+                  FROM ${var.catalog}.${var.schema}.genie_gate_hour_occupancy
+                  WHERE hour_start_utc >= (SELECT MAX(last_event_ts) FROM ${var.catalog}.${var.schema}.genie_flight_state) - INTERVAL 12 HOURS
+                  GROUP BY ALL ORDER BY occupied_minutes DESC LIMIT 10

@@ -1,0 +1,18 @@
+# Template for your own workspace target. Copy to <name>.local.yml (gitignored) and fill in.
+# Then: python scripts/deploy.py all --target myws --profile MYWS
+targets:
+  myws:
+    variables:
+      catalog: <catalog>                       # USE CATALOG + CREATE SCHEMA needed
+      genie_warehouse_id: <sql_warehouse_id>   # serverless recommended
+      # Reuse an existing Lakebase project instead of creating one (optional):
+      # lakebase_project_id: <project_id>
+      # Pre-created pipeline service principal (optional; deploy.py create-sp otherwise):
+      # pipeline_sp_app_id: <application_id>
+    # Optional: tag serverless spend with a budget policy
+    # resources:
+    #   pipelines:
+    #     bronze: {budget_policy_id: <policy_id>}
+    #     gold: {budget_policy_id: <policy_id>}
+    #   apps:
+    #     dashboard: {budget_policy_id: <policy_id>}

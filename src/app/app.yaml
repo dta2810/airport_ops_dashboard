@@ -1,0 +1,7 @@
+# Command pinned here so every deploy path runs uvicorn; env lives in the bundle (needs ${var.*}).
+# Scopes minted into the user's OBO token; keep identical to user_api_scopes in resources/app.yml.
+command: ["python", "-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+user_authorization:
+  scopes:
+    - postgres
+    - genie

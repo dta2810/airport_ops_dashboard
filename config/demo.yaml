@@ -1,0 +1,45 @@
+# Demo behaviour. Deployment identifiers (catalog, schema, Lakebase, SP) live in databricks.yml.
+brand:
+  airline: aeroLatinos          # fictitious
+  airline_code: AL
+
+network:
+  hub: PTY                      # single central hub; every flight touches it
+  spokes: [BOG, LIM, SJO, GUA, SAL, MEX, MIA, SDQ, UIO, CUN, MDE, SCL]
+  banks_local: ["06:30", "10:30", "15:00", "20:30"]   # hub connection waves
+
+fleet:
+  aircraft_type: B737-800       # single type
+  size: 30
+  min_ground_time_min: 40
+
+kpis:
+  otp_threshold_min: 15         # D15
+  min_connection_time_min: 45   # hub MCT
+
+simulation:
+  seed: 42
+  backfill_days: 7
+  time_scale: 60                # simulated minutes per wall minute in live mode
+  landing_format: json
+
+serving:
+  refresh_seconds: 30
+  token_ttl_s: 3000
+  write_delta_replica: true
+  write_lakebase: true
+
+# OBO access model (contract §7). Group names must match Databricks groups; '*' = all airports.
+access:
+  section_tables:
+    overview: [airport_hour_kpis, flight_state]
+    flights: [flight_state]
+    delays: [flight_state]
+    airport_kpis: [airport_hour_kpis]
+    gates: [gate_hour_occupancy]
+    connections: [hub_connections]
+  roles:
+    - {group: aops-ops-control, label: Operations Control, priority: 1, airports: ["*"], sections: [overview, flights, airport_kpis, gates, delays, connections]}
+    - {group: aops-hub-connections, label: Hub Connections, priority: 2, airports: [PTY], sections: [overview, flights, connections]}
+    - {group: aops-station-PTY, label: PTY Station, priority: 3, airports: [PTY], sections: [overview, flights, airport_kpis, gates, delays]}
+    - {group: aops-station-BOG, label: BOG Station, priority: 3, airports: [BOG], sections: [overview, flights, airport_kpis, gates, delays]}

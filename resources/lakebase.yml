@@ -1,0 +1,9 @@
+# Lakebase objects managed by the bundle. The UC catalog on the database (postgres_catalogs) is opt-in per target: it needs CREATE CATALOG.
+# The owner role is not bundle-managed: deploy.py lakebase-role finds or creates the gold principal's role and passes its path.
+resources:
+  postgres_databases:
+    airport_ops_db:
+      database_id: ${var.lakebase_database_id}
+      postgres_database: ${var.lakebase_database}
+      role: ${var.lakebase_owner_role}
+      parent: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}

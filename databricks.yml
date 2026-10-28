@@ -1,0 +1,125 @@
+bundle:
+  name: airport_ops_dashboard
+
+include:
+  - resources/*.yml
+  # your own workspace targets, gitignored: copy targets.example.yml to <name>.local.yml
+  - "*.local.yml"
+
+# frontend/dist is gitignored but must ship with the app (built by scripts/deploy.py)
+sync:
+  include:
+    - src/app/frontend/dist/**
+
+# Default root path (restricted to the deploying user); the pipeline SP only gets read access (none in deployer mode).
+permissions: ${var.bundle_permissions}
+
+# Deployment identifiers only. Demo behaviour (fleet, hub, simulator) lives in config/demo.yaml.
+# No workspace host or profile is stored here: pass `-p <profile>` on every bundle command.
+variables:
+  catalog:
+    description: UC catalog you can CREATE SCHEMA in
+  schema:
+    description: UC schema for the project
+    default: airport_ops
+  landing_volume:
+    description: UC volume where the simulator drops event files
+    default: landing
+  pipeline_sp_name:
+    description: Display name of the gold pipeline service principal (created by scripts/create_sp.sh)
+    default: airport-ops-dash-sp
+  pipeline_sp_app_id:
+    description: Application id of the service principal the gold consumers run as (deploy.py create-sp prints it); unused in deployer mode
+    default: ""
+
+  # gold identity: service_principal (default) or deployer. deploy.py --identity writes the derived values below
+  # to .databricks/bundle/<target>/variable-overrides.json; see docs/deployment.md#gold-identity
+  gold_identity:
+    description: service_principal | deployer (who the gold pipeline and the classic gold job run as)
+    default: service_principal
+  gold_principal:
+    description: Principal granted UC + Lakebase access for gold, and its Postgres role name (SP app id or deployer email)
+    default: ${var.pipeline_sp_app_id}
+  gold_run_as:
+    description: run_as of the gold pipeline and the classic gold job
+    type: complex
+    default:
+      service_principal_name: ${var.pipeline_sp_app_id}
+  bundle_permissions:
+    description: Bundle-level permissions (deployer CAN_MANAGE, gold SP CAN_VIEW)
+    type: complex
+    default:
+      - level: CAN_MANAGE
+        user_name: ${workspace.current_user.userName}
+      - level: CAN_VIEW
+        service_principal_name: ${var.pipeline_sp_app_id}
+  lakebase_owner_principal:
+    description: Principal the owner role was resolved for (set by deploy.py; a change triggers lakebase-role again)
+    default: ""
+  lakebase_owner_role:
+    description: Lakebase role resource (projects/<p>/branches/<b>/roles/<id>) that owns the database; set by deploy.py lakebase-role
+    default: ""
+  lakebase_create_project:
+    description: "true = deploy.py creates the Lakebase project when it does not exist (target new)"
+    default: "false"
+  lakebase_min_cu:
+    description: Lakebase endpoint autoscaling floor (CU); applied when deploy.py creates the project, or by `deploy.py lakebase-size`
+    default: "0.5"
+  lakebase_max_cu:
+    description: Lakebase endpoint autoscaling ceiling (CU)
+    default: "4"
+  lakebase_suspend:
+    description: Lakebase endpoint auto-suspend after idle (60s-604800s)
+    default: "300s"
+
+  lakebase_project_id:
+    description: Lakebase autoscaling project id (created by target "new", existing for target "reuse")
+    default: airport-ops-dashboard
+  lakebase_branch_id:
+    default: production
+  lakebase_endpoint_id:
+    default: primary
+  lakebase_database_id:
+    description: Lakebase database resource id (lowercase + hyphens)
+    default: airport-ops
+  lakebase_database:
+    description: Postgres database for the serving gold
+    default: airport_ops
+  lakebase_catalog:
+    description: UC catalog registered on the Lakebase database
+    default: airport_ops_lb
+
+  app_name:
+    description: Databricks App name (immutable after creation; lowercase + hyphens)
+    default: airport-ops-dashboard
+
+  access_groups:
+    description: Comma-separated list of Databricks group names for role-based access
+    default: aops-ops-control,aops-hub-connections,aops-station-PTY,aops-station-BOG
+
+  genie_warehouse_id:
+    description: SQL warehouse the Genie space runs queries on (serverless recommended)
+  genie_reader:
+    description: UC principal granted SELECT on the Genie views; rows are filtered by aops-* group membership inside the views
+    default: account users
+
+targets:
+  # Fresh workspace: deploy.py lakebase-role creates the Lakebase project (not bundle-managed, so destroy never deletes it).
+  new:
+    default: true
+    variables:
+      lakebase_create_project: "true"
+    resources:
+      postgres_catalogs:
+        airport_ops_uc:
+          catalog_id: ${var.lakebase_catalog}
+          postgres_database: ${resources.postgres_databases.airport_ops_db.postgres_database}
+          branch: projects/${var.lakebase_project_id}/branches/${var.lakebase_branch_id}
+
+  # Fresh workspace without CREATE CATALOG on the metastore: same as new, minus the optional UC catalog over Postgres.
+  new_no_catalog:
+    variables:
+      lakebase_create_project: "true"
+
+  # Existing Lakebase project/branch: only database and catalog are managed; deploy.py manages the owner role.
+  reuse: {}

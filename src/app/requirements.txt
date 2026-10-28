@@ -1,0 +1,7 @@
+fastapi==0.143.2
+starlette==1.8.0  # PIN: Range-header DoS fix (CVE-2025-62727)
+uvicorn==0.34.0
+databricks-sdk==0.120.0  # PIN: postgres.generate_database_credential(group_name=) removed in later SDKs
+psycopg[binary]==3.2.3
+psycopg-pool==3.2.4
+pydantic>=2.9,<3

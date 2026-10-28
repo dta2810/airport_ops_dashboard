@@ -1,0 +1,31 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+*.egg
+
+# Node
+node_modules/
+dist/
+npm-debug.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+.env
+.env.local
+landing_local/
+.venv-dbc/
+.venv-app/
+
+# Bundle state + deploy.py variable overrides
+.databricks/
+
+# Personal bundle targets (see targets.example.yml)
+*.local.yml
