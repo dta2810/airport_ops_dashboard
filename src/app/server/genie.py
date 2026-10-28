@@ -185,10 +185,12 @@ def _download_viz(token, email, cid, mid, att):
 
 def _prefetch(token, email, cid, mid, att):
     with _inflight_lock:
-        if mid not in _inflight:
+        fut = _inflight.get(mid)
+        if fut is None:
             fut = _inflight[mid] = _pool.submit(_download_viz, token, email, cid, mid, att)
+            # a fast failure may run this callback before we return: return fut itself, not the dict entry
             fut.add_done_callback(lambda _f: _inflight.pop(mid, None))
-        return _inflight.get(mid)
+        return fut
 
 
 @router.get("/viz/{cid}/{mid}")
@@ -208,9 +210,11 @@ def viz(cid: str, mid: str, request: Request):
         else:
             fut = _prefetch(token, email, cid, mid, saved["viz_attachment_id"])
             try:
-                png = fut.result(timeout=60) if fut else store().get_viz(email, mid)
+                png = fut.result(timeout=60)
             except Exception as e:
                 raise _err(e)
+    if not png:
+        raise HTTPException(502, "Chart not available")  # never cache an empty image
     return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=86400"})
 
 

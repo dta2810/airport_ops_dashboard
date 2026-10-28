@@ -175,3 +175,10 @@ def test_notebook_end_to_end(monkeypatch, tmp_path):
     assert all(s["std_utc"] >= datetime(2026, 10, 19, 5, 30, tzinfo=UTC) for s in _FakeSpark.tables["dim_schedule"])
     assert {r["flight_id"] for r in rows} <= {s["flight_id"] for s in _FakeSpark.tables["dim_schedule"]}
     assert _FakeSpark.tables["dim_connection"]
+
+
+def test_two_live_windows_same_day_get_distinct_event_ids():
+    t0 = datetime(2026, 10, 19, 5, 30, tzinfo=UTC)
+    a, b = live_simulator(CFG, t0), live_simulator(CFG, t0 + timedelta(hours=2))
+    assert [a._next_event_id() for _ in range(5)] != [b._next_event_id() for _ in range(5)]
+

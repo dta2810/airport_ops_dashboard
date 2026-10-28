@@ -40,7 +40,8 @@ class LakebaseWriter:
                 with conn.cursor() as cur:
                     cur.execute(sql.SQL("SELECT last_batch_id FROM {} WHERE sink = %s FOR UPDATE").format(ctl("batch_control")), (sink,))
                     r = cur.fetchone()
-                    if r is not None and r[0] >= batch_id:
+                    # same id = replay of a committed batch; a lower id = checkpoint reset (full refresh) → write
+                    if r is not None and r[0] == batch_id:
                         return {"skipped": True, "upserted": 0, "deleted": 0, "refreshed": refreshed}
                     if rows:
                         upd = [sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(c), sql.Identifier(c)) for c in cols if c not in key_cols]
@@ -66,7 +67,9 @@ class LakebaseWriter:
                         "token_minted_at = EXCLUDED.token_minted_at").format(ctl("batch_control")), (sink, batch_id, self._minted))
                     cur.execute(sql.SQL(
                         "INSERT INTO {} (sink, batch_id, n_keys, n_rows, n_deleted, batch_started_at, max_event_ts) "
-                        "VALUES (%s, %s, %s, %s, %s, to_timestamp(%s), %s) ON CONFLICT DO NOTHING").format(ctl("batch_log")),
+                        "VALUES (%s, %s, %s, %s, %s, to_timestamp(%s), %s) ON CONFLICT (sink, batch_id) DO UPDATE SET "
+                        "n_keys = EXCLUDED.n_keys, n_rows = EXCLUDED.n_rows, n_deleted = EXCLUDED.n_deleted, "
+                        "batch_started_at = EXCLUDED.batch_started_at, max_event_ts = EXCLUDED.max_event_ts, written_at = now()").format(ctl("batch_log")),
                         (sink, batch_id, len(keys), len(rows), deleted, batch_started or time.time(),
                          max((row[ts_col] for row in rows if row.get(ts_col)), default=None)))
                     if refreshed:

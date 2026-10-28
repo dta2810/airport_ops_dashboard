@@ -137,6 +137,22 @@ def test_obo_roles_only_accepted_groups(monkeypatch):
     assert sorted(opened) == sorted(got)  # refused groups never get a pool
 
 
+
+def test_obo_roles_not_cached_after_transient_failure(monkeypatch):
+    c, routes, auth = _client(monkeypatch, mock=False)
+    up = {"ok": False}
+
+    def conn(e, r, t):
+        if not up["ok"]:
+            raise psycopg.OperationalError("cold start")
+        return _Conn(r)
+    monkeypatch.setattr(auth, "mint", lambda t, g: "pw" if g == "aops-station-BOG" else (_ for _ in ()).throw(RuntimeError("refused")))
+    monkeypatch.setattr(auth, "connection", conn)
+    monkeypatch.setattr(auth, "user_client", _fake_user_client("u@example.com"))
+    assert c.get("/api/roles", headers=H).json()["roles"] == []
+    up["ok"] = True
+    assert [r["role"] for r in c.get("/api/roles", headers=H).json()["roles"]] == ["aops-station-BOG"]
+
 def test_obo_unknown_role_and_parameterized_airport(monkeypatch):
     c, routes, auth = _client(monkeypatch, mock=False)
     conns = []

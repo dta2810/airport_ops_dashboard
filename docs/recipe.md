@@ -42,7 +42,7 @@ How this repo was built, as steps you can repeat with your own data. Each step l
 
 ## 6. Gold logic
 
-- UC silver and gold views implement the contract formulas; the `foreach_batch_sink` computes touched keys, recomputes them from the views, MERGEs the Delta replica and upserts/deletes Lakebase in one transaction with `batch_id` idempotency.
+- UC silver and gold views implement the contract formulas; the `foreach_batch_sink` computes touched keys, recomputes them from the views, MERGEs the Delta replica and upserts/deletes Lakebase in one transaction with `batch_id` idempotency. A batch with the stored `batch_id` is a replay and is skipped. A lower id means the checkpoint was reset (full refresh, new checkpoint path), so it is written: the writes are recomputed state, safe to apply again.
 - **Your context:** rewrite the views; keep the sink and `lakebase_writer.py` as they are.
 - One module renders every gold query; views use prune `TRUE`, the sink injects a literal `event_date IN (...)` on the bronze scan. Same text, so views and sink cannot drift.
 - Prune on dates only unless every KPI input lives at the key's location (here cancellations sit at the origin and diversions at the destination, so an airport prune would undercount).

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace as NS
 
+import pytest
 from fastapi.testclient import TestClient
 
 APP = Path(__file__).resolve().parents[1] / "src/app"
@@ -150,3 +151,32 @@ def test_mock_mode_genie_with_databricks_app_name_raises(monkeypatch):
     import pytest
     with pytest.raises(RuntimeError, match="MOCK_MODE is unsafe"):
         importlib.import_module("server.genie")
+
+
+def test_chat_store_retries_ddl_after_a_failed_first_call(monkeypatch):
+    from contextlib import contextmanager
+    from server import chat_store
+    calls = {"pools": 0, "closed": 0}
+
+    class FakePool:
+        check_connection = None
+
+        def __init__(self, **k):
+            calls["pools"] += 1
+            self.n = calls["pools"]
+
+        @contextmanager
+        def connection(self):
+            if self.n == 1:
+                raise RuntimeError("cold start")
+            yield type("C", (), {"execute": lambda self, s: None})()
+
+        def close(self):
+            calls["closed"] += 1
+
+    monkeypatch.setattr(chat_store, "ConnectionPool", FakePool)
+    s = chat_store.PgStore({"host": "h"})
+    with pytest.raises(RuntimeError):
+        s._get_pool()
+    assert s._pool is None and calls["closed"] == 1
+    assert s._get_pool() is not None and calls["pools"] == 2

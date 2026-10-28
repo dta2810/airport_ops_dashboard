@@ -160,16 +160,20 @@ def roles(request: Request):
     if email in _roles_cache:
         return _roles_cache[email][1]
 
-    out = []
+    out, transient = [], False
     for group in ACCESS_GROUPS:
         try:
             auth.mint(token, group)  # fail fast: a refused mint would otherwise block on the pool timeout
+        except Exception:
+            continue  # not a member: the platform refuses the mint
+        try:
             with auth.connection(email, group, token) as conn:
                 out.append({"role": group, **_policy(conn)})
         except Exception:
-            continue  # not a member (mint refused) or no policy row
+            transient = True  # member, but Lakebase/policy failed (e.g. cold start): do not cache
     res = {"roles": sorted(out, key=lambda r: r["priority"])}
-    _roles_cache[email] = (now, res)
+    if not transient:
+        _roles_cache[email] = (now, res)
     return res
 
 

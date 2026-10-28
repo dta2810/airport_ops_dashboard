@@ -140,3 +140,15 @@ def test_permission_error_is_403(monkeypatch):
     monkeypatch.setattr(g.auth, "user_client", fake_user_client)
     r = c.post("/api/genie/ask", json={"question": "q"}, headers=H)
     assert r.status_code == 403 and "consent" in r.json()["detail"]
+
+
+def test_viz_download_failure_is_an_error_not_an_empty_image(monkeypatch):
+    c, g = _app(monkeypatch, mock=False)
+    fake = FakeGenie()
+    fake.download_message_attachment_visualization = lambda name: (_ for _ in ()).throw(RuntimeError("PERMISSION_DENIED: expired"))
+    monkeypatch.setattr(g.auth, "user_client", lambda tok: NS(genie=fake, current_user=NS(me=lambda: NS(user_name="a@example.com"))))
+    c.post("/api/genie/ask", json={"question": "OTP?"}, headers=H)
+    for _ in range(2):
+        c.get(f"/api/genie/messages/{CID}/{MID}", headers=H)
+    r = c.get(f"/api/genie/viz/{CID}/{MID}", headers=H)
+    assert r.status_code == 403 and "max-age" not in r.headers.get("cache-control", "")

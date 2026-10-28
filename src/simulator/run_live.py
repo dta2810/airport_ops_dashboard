@@ -45,8 +45,9 @@ for table, rows, keys in [("dim_schedule", schedule, ["flight_id"]),
         print(f"{table}: +0 rows")
         continue
     new = spark.createDataFrame(rows).join(spark.table(f"{dims_schema}.{table}").select(*keys), keys, "left_anti")
+    n = new.count()  # count before the append: after it the anti-join is empty
     new.write.format("delta").mode("append").saveAsTable(f"{dims_schema}.{table}")
-    print(f"{table}: +{new.count()} rows")
+    print(f"{table}: +{n} rows")
 
 gen_now = datetime.now(timezone.utc)
 plan = plan_live(sim.generate_events(days, flight_map), gen_now)

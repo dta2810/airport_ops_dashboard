@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src" / "pipelines" / "gold"))
 
-from gold_helpers import quote_literal, build_literal_in_list, build_composite_key_in_list
+from gold_helpers import quote_literal
 
 
 class TestQuoteLiterals:
@@ -14,7 +14,9 @@ class TestQuoteLiterals:
 
     def test_string(self):
         assert quote_literal("hello") == "'hello'"
-        assert quote_literal("it's") == "'it''s'"
+        assert quote_literal("it's") == "'it\\'s'"
+        assert quote_literal("HP-1\\") == "'HP-1\\\\'"
+        assert quote_literal("x\\' OR 1=1 --") == "'x\\\\\\' OR 1=1 --'"
         assert quote_literal("PTY") == "'PTY'"
 
     def test_numbers(self):
@@ -40,74 +42,6 @@ class TestQuoteLiterals:
         assert result.startswith("timestamp '")
         assert "2026-01-15" in result
         assert "10:30:45" in result
-
-
-class TestBuildLiteralInList:
-    """Test building SQL IN clauses from value lists."""
-
-    def test_empty_list(self):
-        result = build_literal_in_list([])
-        assert result == []
-
-    def test_small_list(self):
-        result = build_literal_in_list(["PTY", "BOG", "LIM"])
-        assert len(result) == 1
-        clause = result[0]
-        assert "PTY" in clause
-        assert "BOG" in clause
-        assert "LIM" in clause
-        assert clause.startswith("(") and clause.endswith(")")
-
-    def test_chunking(self):
-        values = [f"airport_{i}" for i in range(1500)]
-        result = build_literal_in_list(values, max_items_per_chunk=1000)
-        assert len(result) == 2
-        assert result[0].startswith("(") and result[0].endswith(")")
-        assert result[1].startswith("(") and result[1].endswith(")")
-
-    def test_mixed_types(self):
-        values = [1, 2, 3, 4, 5]
-        result = build_literal_in_list(values)
-        assert len(result) == 1
-        clause = result[0]
-        for v in values:
-            assert str(v) in clause
-
-
-class TestBuildCompositeKeyInList:
-    """Test building IN clauses for composite keys."""
-
-    def test_empty_keys(self):
-        result = build_composite_key_in_list([])
-        assert result == []
-
-    def test_single_key_tuple(self):
-        keys = [("PTY", "2026-01-15")]
-        result = build_composite_key_in_list(keys)
-        assert len(result) == 1
-        clause = result[0]
-        assert "PTY" in clause
-        assert "2026-01-15" in clause
-
-    def test_multiple_key_tuples(self):
-        keys = [
-            ("PTY", "2026-01-15"),
-            ("BOG", "2026-01-15"),
-            ("LIM", "2026-01-16"),
-        ]
-        result = build_composite_key_in_list(keys)
-        assert len(result) == 1
-        clause = result[0]
-        assert "PTY" in clause
-        assert "BOG" in clause
-        assert "LIM" in clause
-
-    def test_chunking_large_keys(self):
-        keys = [(f"airport_{i}", f"2026-01-15") for i in range(700)]
-        result = build_composite_key_in_list(keys, max_items_per_chunk=500)
-        assert len(result) == 2
-        assert result[0].startswith("(")
-        assert result[1].startswith("(")
 
 
 class TestBusinessLogic:

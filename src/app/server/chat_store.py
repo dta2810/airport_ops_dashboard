@@ -77,11 +77,17 @@ class PgStore:
                     if w:
                         raise auth.GovernanceError("; ".join(w))
 
-                self._pool = ConnectionPool(kwargs=kw, connection_class=_Conn, configure=_guard, check=ConnectionPool.check_connection,
-                                            min_size=0, max_size=4, max_idle=60, max_lifetime=auth.MAX_LIFETIME_S, open=True)
-                with self._pool.connection() as conn:
-                    for s in DDL:
-                        conn.execute(s)
+                pool = ConnectionPool(kwargs=kw, connection_class=_Conn, configure=_guard, check=ConnectionPool.check_connection,
+                                      min_size=0, max_size=4, max_idle=60, max_lifetime=auth.MAX_LIFETIME_S, open=True)
+                # publish the pool only once the DDL succeeded, so a failed first call is retried
+                try:
+                    with pool.connection() as conn:
+                        for s in DDL:
+                            conn.execute(s)
+                except Exception:
+                    pool.close()
+                    raise
+                self._pool = pool
             return self._pool
 
     @contextmanager

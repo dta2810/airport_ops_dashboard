@@ -31,7 +31,7 @@ Late, duplicate and out-of-order events are allowed; the latest `event_ts` per (
 | Table | Key | Columns |
 |---|---|---|
 | `dim_airport` | `airport_iata` | `name, city, country, tz, is_hub, lat, lon` |
-| `dim_gate` | `airport_iata, gate_id` | `terminal` |
+| `dim_gate` | `airport_iata, gate_id` | `terminal` (hub only: T1 = A01–A15 departures, T2 = B01–B15 arrivals) |
 | `dim_aircraft` | `tail_number` | `aircraft_type, seats` |
 | `dim_route` | `origin_iata, destination_iata` | `block_minutes, distance_km` |
 | `dim_schedule` | `flight_id` | `flight_number, origin_iata, destination_iata, tail_number, std_utc, sta_utc` |

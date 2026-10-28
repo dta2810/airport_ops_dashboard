@@ -294,6 +294,20 @@ def test_gates_at_hub_only():
     assert gate_airports == {hub}, f"Gates found at {gate_airports}, expected only {hub}"
 
 
+def test_gate_ids_unique_and_match_events():
+    """dim_gate keys are unique and cover every hub gate the events use."""
+    sim = OpsSimulator(CONFIG_PATH)
+    hub = sim.cfg["network"]["hub"]
+    airports = sim.build_airports()
+    gates = sim.build_gates(airports)
+    keys = [(g["airport_iata"], g["gate_id"]) for g in gates]
+    assert len(keys) == len(set(keys))
+    _, flight_map = sim.build_schedule(1, sim.build_aircraft(), airports)
+    used = {(e["airport_iata"], e["gate_id"]) for e in sim.generate_events(1, flight_map)
+            if e.get("gate_id") and e["airport_iata"] == hub}
+    assert used and used <= set(keys)
+
+
 def test_routes_hub_and_spoke_only():
     """Verify all routes connect hub to spokes (no spoke-spoke routes)."""
     sim = OpsSimulator(CONFIG_PATH)
@@ -466,3 +480,17 @@ def test_on_time_departures_mostly_arrive_on_time():
             arr_ok += ts(ib["event_ts"]) - ts(ib["sta_utc"]) <= timedelta(minutes=15)
     assert dep_ok > 50
     assert arr_ok / dep_ok >= 0.9
+
+
+def test_takeoff_never_before_off_block():
+    """Every flight with both milestones (diverted ones included) has TAKEOFF >= OFF_BLOCK."""
+    sim = OpsSimulator(CONFIG_PATH)
+    airports = sim.build_airports()
+    _, flight_map = sim.build_schedule(3, sim.build_aircraft(), airports)
+    ts = {}
+    for e in sim.generate_events(3, flight_map):
+        if e["event_type"] in ("OFF_BLOCK", "TAKEOFF"):
+            ts.setdefault(e["flight_id"], {})[e["event_type"]] = e["event_ts"]
+    both = [t for t in ts.values() if len(t) == 2]
+    assert both and all(t["TAKEOFF"] >= t["OFF_BLOCK"] for t in both)
+

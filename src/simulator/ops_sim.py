@@ -102,10 +102,10 @@ class OpsSimulator:
             if not airport["is_hub"]:
                 continue  # Gates only at hub
             iata = airport["airport_iata"]
-            # 2 terminals, 15 gates each
+            # 2 terminals, 15 gates each: T1 = A01..A15 (departures), T2 = B01..B15 (arrivals), as in the events
             for term_num in [1, 2]:
                 for gate_num in range(1, 16):
-                    gate_id = f"{chr(64 + gate_num)}{gate_num:02d}"
+                    gate_id = f"{'AB'[term_num - 1]}{gate_num:02d}"
                     gates.append({
                         "airport_iata": iata,
                         "gate_id": gate_id,
@@ -171,7 +171,7 @@ class OpsSimulator:
         flight_map = {}
         hub = self.cfg["network"]["hub"]
         spokes = self.cfg["network"]["spokes"]
-        banks_local = self.cfg["network"]["banks_local"]  # ["06:30", "10:30", "15:00", "20:30"]
+        banks_utc = self.cfg["network"]["banks_utc"]  # wave times, UTC
         aircraft_list = [a["tail_number"] for a in aircraft]
         min_ground_time = self.cfg["fleet"]["min_ground_time_min"]
 
@@ -186,7 +186,7 @@ class OpsSimulator:
             for tail in aircraft_list:
                 # Each tail does 3-4 rotations per day, banks in time order
                 n_rotations = self.rng.randint(3, 4)
-                banks = sorted(self.rng.sample(banks_local, min(n_rotations, len(banks_local))))
+                banks = sorted(self.rng.sample(banks_utc, min(n_rotations, len(banks_utc))))
 
                 for bank_str in banks:
                     bank_h, bank_m = map(int, bank_str.split(":"))
@@ -399,7 +399,7 @@ class OpsSimulator:
                     std=std,
                     sta=sta,
                     event_type="OFF_BLOCK",
-                    event_ts=std + timedelta(minutes=self.rng.randint(-5, 30)),
+                    event_ts=(off_block := std + timedelta(minutes=self.rng.randint(-5, 30))),
                     airport=origin,
                 ))
 
@@ -412,7 +412,8 @@ class OpsSimulator:
                     std=std,
                     sta=sta,
                     event_type="TAKEOFF",
-                    event_ts=std + timedelta(minutes=self.rng.randint(20, 60)),
+                    # taxi-out after off-block, never before it
+                    event_ts=off_block + timedelta(minutes=self.rng.randint(10, 30)),
                     airport=origin,
                 ))
 
@@ -653,7 +654,8 @@ def live_window_start(max_event_ts: datetime, live_start_hhmm: str = "05:30",
 
 def live_simulator(config_path: str, start: datetime) -> OpsSimulator:
     sim = OpsSimulator(config_path, backfill_start_utc=start)
-    sim.rng = random.Random(sim.seed + start.toordinal())  # distinct event_ids per live window
+    # distinct event_ids per live window: seed by the window start minute, not just the day
+    sim.rng = random.Random(sim.seed + int(start.timestamp()) // 60)
     return sim
 
 
